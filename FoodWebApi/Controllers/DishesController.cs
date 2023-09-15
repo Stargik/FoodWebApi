@@ -7,6 +7,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
+using FoodMVCWebApp;
+using FoodMVCWebApp.Interfaces;
+using Microsoft.Extensions.Options;
+using FoodMVCWebApp.Models;
 
 namespace FoodWebApi.Controllers
 {
@@ -15,10 +19,14 @@ namespace FoodWebApi.Controllers
     public class DishesController : ControllerBase
     {
         private readonly FoodDbContext _context;
+        private readonly IImageService imageService;
+        private readonly StaticFilesSettings imgSettings;
 
-        public DishesController(FoodDbContext context)
+        public DishesController(FoodDbContext context, IImageService imageService, IOptions<StaticFilesSettings> imgSettings)
         {
             _context = context;
+            this.imageService = imageService;
+            this.imgSettings = imgSettings.Value;
         }
 
         // GET: api/Dishes
@@ -29,7 +37,20 @@ namespace FoodWebApi.Controllers
           {
               return NotFound();
           }
-            return await _context.Dishes.ToListAsync();
+            var storagePath = await imageService.GetStoragePath();
+            return await _context.Dishes.Select(dish => new Dish
+            {
+                Id = dish.Id,
+                Title = dish.Title,
+                Recipe = dish.Recipe,
+                Category = dish.Category,
+                CategoryId = dish.CategoryId,
+                DifficultyLevel = dish.DifficultyLevel,
+                DifficultyLevelId = dish.DifficultyLevelId,
+                CuisineCountryType = dish.CuisineCountryType,
+                CuisineCountryTypeId = dish.CuisineCountryTypeId,
+                Image = storagePath + "/" + dish.Image
+            }).ToListAsync();
         }
 
         // GET: api/Dishes/5
@@ -41,6 +62,7 @@ namespace FoodWebApi.Controllers
               return NotFound();
           }
             var dish = await _context.Dishes.FindAsync(id);
+            dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
 
             if (dish == null)
             {
@@ -53,13 +75,30 @@ namespace FoodWebApi.Controllers
         // PUT: api/Dishes/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutDish(int id, Dish dish)
+        public async Task<IActionResult> PutDish(int id, [FromForm] DishDTO dishDTO)
         {
-            if (id != dish.Id)
+            if (id != dishDTO.Id)
             {
                 return BadRequest();
             }
 
+            var dish = new Dish
+            {
+                Id = dishDTO.Id,
+                Title = dishDTO.Title,
+                Recipe = dishDTO.Recipe,
+                CategoryId = dishDTO.CategoryId,
+                DifficultyLevelId = dishDTO.DifficultyLevelId,
+                CuisineCountryTypeId = dishDTO.CuisineCountryTypeId,
+            };
+            if (dishDTO.Image is null)
+            {
+                dish.Image = (await _context.Dishes.AsNoTracking().FirstOrDefaultAsync(dish => dish.Id == dishDTO.Id)).Image;
+            }
+            if (dishDTO.Image is not null)
+            {
+                await imageService.Upload(dishDTO.Image);
+            }
             _context.Entry(dish).State = EntityState.Modified;
 
             try
@@ -84,15 +123,26 @@ namespace FoodWebApi.Controllers
         // POST: api/Dishes
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Dish>> PostDish(Dish dish)
+        public async Task<ActionResult<Dish>> PostDish([FromForm] DishDTO dishDTO)
         {
           if (_context.Dishes == null)
           {
               return Problem("Entity set 'FoodDbContext.Dishes'  is null.");
           }
+            var dish = new Dish
+            {
+                Id = dishDTO.Id,
+                Title = dishDTO.Title,
+                Recipe = dishDTO.Recipe,
+                CategoryId = dishDTO.CategoryId,
+                DifficultyLevelId = dishDTO.DifficultyLevelId,
+                CuisineCountryTypeId = dishDTO.CuisineCountryTypeId,
+                Image = dishDTO.Image.FileName
+            };
+            await imageService.Upload(dishDTO.Image);
             _context.Dishes.Add(dish);
             await _context.SaveChangesAsync();
-
+            dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
             return CreatedAtAction("GetDish", new { id = dish.Id }, dish);
         }
 

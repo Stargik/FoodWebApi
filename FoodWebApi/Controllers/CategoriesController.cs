@@ -41,12 +41,10 @@ namespace FoodWebApi.Controllers
               return NotFound();
           }
             var category = await _context.Categories.FindAsync(id);
-
             if (category == null)
             {
                 return NotFound();
             }
-
             return category;
         }
 
@@ -84,7 +82,7 @@ namespace FoodWebApi.Controllers
         // POST: api/Categories
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Category>> PostCategory(Category category)
+        public async Task<ActionResult<Category>> PostCategory([FromForm] Category category)
         {
           if (_context.Categories == null)
           {
