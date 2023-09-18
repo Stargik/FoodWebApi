@@ -11,6 +11,8 @@ using FoodMVCWebApp;
 using FoodMVCWebApp.Interfaces;
 using Microsoft.Extensions.Options;
 using FoodMVCWebApp.Models;
+using FoodWebApi.Models;
+using Newtonsoft.Json;
 
 namespace FoodWebApi.Controllers
 {
@@ -31,14 +33,14 @@ namespace FoodWebApi.Controllers
 
         // GET: api/Dishes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Dish>>> GetDishes()
+        public async Task<ActionResult<IEnumerable<Dish>>> GetDishes([FromQuery] PaginationParams paginationParams)
         {
           if (_context.Dishes == null)
           {
               return NotFound();
           }
             var storagePath = await imageService.GetStoragePath();
-            return await _context.Dishes.Select(dish => new Dish
+            var dishes = await _context.Dishes.Select(dish => new Dish
             {
                 Id = dish.Id,
                 Title = dish.Title,
@@ -51,6 +53,24 @@ namespace FoodWebApi.Controllers
                 CuisineCountryTypeId = dish.CuisineCountryTypeId,
                 Image = storagePath + "/" + dish.Image
             }).ToListAsync();
+
+            if (paginationParams.PageSize is not null)
+            {
+                var paginationDishes = PaginationList<Dish>.ToPaginationList(dishes, paginationParams.numberPage, (int)paginationParams.PageSize);
+                var metadata = new
+                {
+                    paginationDishes.TotalCount,
+                    paginationDishes.PageSize,
+                    paginationDishes.CurrentPage,
+                    paginationDishes.TotalPages,
+                    paginationDishes.HasNext,
+                    paginationDishes.HasPrevious,
+                    nextLink = $"{Url.PageLink()}?numberPage={paginationParams.numberPage + 1}&PageSize={paginationParams.PageSize}"
+                };
+                Response.Headers.Add("X-Pagination", JsonConvert.SerializeObject(metadata));
+                return Ok(paginationDishes);
+            }
+            return Ok(dishes);
         }
 
         // GET: api/Dishes/5
@@ -131,7 +151,6 @@ namespace FoodWebApi.Controllers
           }
             var dish = new Dish
             {
-                Id = dishDTO.Id,
                 Title = dishDTO.Title,
                 Recipe = dishDTO.Recipe,
                 CategoryId = dishDTO.CategoryId,

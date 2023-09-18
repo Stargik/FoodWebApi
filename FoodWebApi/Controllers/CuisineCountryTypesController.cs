@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
+using FoodWebApi.Models;
+using Newtonsoft.Json;
 
 namespace FoodWebApi.Controllers
 {
@@ -23,13 +25,31 @@ namespace FoodWebApi.Controllers
 
         // GET: api/CuisineCountryTypes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<CuisineCountryType>>> GetCuisineCountryTypes()
+        public async Task<ActionResult<IEnumerable<CuisineCountryType>>> GetCuisineCountryTypes([FromQuery] PaginationParams paginationParams)
         {
-          if (_context.CuisineCountryTypes == null)
-          {
-              return NotFound();
-          }
-            return await _context.CuisineCountryTypes.ToListAsync();
+            if (_context.CuisineCountryTypes == null)
+            {
+                return NotFound();
+            }
+           var cuisineCountryTypes = await _context.CuisineCountryTypes.ToListAsync();
+
+            if (paginationParams.PageSize is not null)
+            {
+                var paginationCuisineCountryTypes = PaginationList<CuisineCountryType>.ToPaginationList(cuisineCountryTypes, paginationParams.numberPage, (int)paginationParams.PageSize);
+                var metadata = new
+                {
+                    paginationCuisineCountryTypes.TotalCount,
+                    paginationCuisineCountryTypes.PageSize,
+                    paginationCuisineCountryTypes.CurrentPage,
+                    paginationCuisineCountryTypes.TotalPages,
+                    paginationCuisineCountryTypes.HasNext,
+                    paginationCuisineCountryTypes.HasPrevious,
+                    nextLink = $"{Url.PageLink()}?numberPage={paginationParams.numberPage + 1}&PageSize={paginationParams.PageSize}"
+                };
+                Response.Headers.Add("X-Pagination", JsonConvert.SerializeObject(metadata));
+                return Ok(paginationCuisineCountryTypes);
+            }
+            return Ok(cuisineCountryTypes);
         }
 
         // GET: api/CuisineCountryTypes/5

@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
+using FoodWebApi.Models;
+using Newtonsoft.Json;
 
 namespace FoodWebApi.Controllers
 {
@@ -23,13 +25,30 @@ namespace FoodWebApi.Controllers
 
         // GET: api/DifficultyLevels
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<DifficultyLevel>>> GetDifficultyLevels()
+        public async Task<ActionResult<IEnumerable<DifficultyLevel>>> GetDifficultyLevels([FromQuery] PaginationParams paginationParams)
         {
-          if (_context.DifficultyLevels == null)
-          {
-              return NotFound();
-          }
-            return await _context.DifficultyLevels.ToListAsync();
+            if (_context.DifficultyLevels == null)
+            {
+                return NotFound();
+            }
+            var levels = await _context.DifficultyLevels.ToListAsync();
+            if (paginationParams.PageSize is not null)
+            {
+                var paginationLevels = PaginationList<DifficultyLevel>.ToPaginationList(levels, paginationParams.numberPage, (int)paginationParams.PageSize);
+                var metadata = new
+                {
+                    paginationLevels.TotalCount,
+                    paginationLevels.PageSize,
+                    paginationLevels.CurrentPage,
+                    paginationLevels.TotalPages,
+                    paginationLevels.HasNext,
+                    paginationLevels.HasPrevious,
+                    nextLink = $"{Url.PageLink()}?numberPage={paginationParams.numberPage + 1}&PageSize={paginationParams.PageSize}"
+                };
+                Response.Headers.Add("X-Pagination", JsonConvert.SerializeObject(metadata));
+                return Ok(paginationLevels);
+            }
+            return Ok(levels);
         }
 
         // GET: api/DifficultyLevels/5

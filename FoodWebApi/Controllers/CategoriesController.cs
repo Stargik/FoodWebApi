@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
+using FoodWebApi.Models;
+using Newtonsoft.Json;
+using System.Drawing.Printing;
 
 namespace FoodWebApi.Controllers
 {
@@ -15,21 +18,41 @@ namespace FoodWebApi.Controllers
     public class CategoriesController : ControllerBase
     {
         private readonly FoodDbContext _context;
+        private readonly IWebHostEnvironment appEnvironment;
 
-        public CategoriesController(FoodDbContext context)
+        public CategoriesController(FoodDbContext context, IWebHostEnvironment appEnvironment)
         {
             _context = context;
+            this.appEnvironment = appEnvironment;
         }
 
         // GET: api/Categories
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Category>>> GetCategories()
+        public async Task<ActionResult<IEnumerable<Category>>> GetCategories([FromQuery] PaginationParams paginationParams)
         {
-          if (_context.Categories == null)
-          {
-              return NotFound();
-          }
-            return await _context.Categories.ToListAsync();
+            if (_context.Categories == null)
+            {
+                return NotFound();
+            }
+            var categories = await _context.Categories.ToListAsync();
+
+            if (paginationParams.PageSize is not null)
+            {
+                var paginationCategories = PaginationList<Category>.ToPaginationList(categories, paginationParams.numberPage, (int)paginationParams.PageSize);
+                var metadata = new
+                {
+                    paginationCategories.TotalCount,
+                    paginationCategories.PageSize,
+                    paginationCategories.CurrentPage,
+                    paginationCategories.TotalPages,
+                    paginationCategories.HasNext,
+                    paginationCategories.HasPrevious,
+                    nextLink = $"{Url.PageLink()}?numberPage={paginationParams.numberPage + 1}&PageSize={paginationParams.PageSize}"
+            };
+                Response.Headers.Add("X-Pagination", JsonConvert.SerializeObject(metadata));
+                return Ok(paginationCategories);
+            }
+            return Ok(categories);   
         }
 
         // GET: api/Categories/5
@@ -45,7 +68,7 @@ namespace FoodWebApi.Controllers
             {
                 return NotFound();
             }
-            return category;
+            return Ok(category);
         }
 
         // PUT: api/Categories/5
@@ -82,7 +105,7 @@ namespace FoodWebApi.Controllers
         // POST: api/Categories
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Category>> PostCategory([FromForm] Category category)
+        public async Task<ActionResult<Category>> PostCategory(Category category)
         {
           if (_context.Categories == null)
           {
