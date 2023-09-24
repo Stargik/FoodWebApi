@@ -9,6 +9,7 @@ using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
 using FoodWebApi.Models;
 using Newtonsoft.Json;
+using FoodWebApi.Interfaces;
 
 namespace FoodWebApi.Controllers
 {
@@ -17,10 +18,12 @@ namespace FoodWebApi.Controllers
     public class DifficultyLevelsController : ControllerBase
     {
         private readonly FoodDbContext _context;
+        private readonly ICacheService cacheService;
 
-        public DifficultyLevelsController(FoodDbContext context)
+        public DifficultyLevelsController(FoodDbContext context, ICacheService cacheService)
         {
             _context = context;
+            this.cacheService = cacheService;
         }
 
         // GET: api/DifficultyLevels
@@ -31,7 +34,14 @@ namespace FoodWebApi.Controllers
             {
                 return NotFound();
             }
-            var levels = await _context.DifficultyLevels.ToListAsync();
+
+            var levels = await cacheService.GetData<IEnumerable<DifficultyLevel>>(typeof(DifficultyLevel).ToString());
+            if (levels is null)
+            {
+                levels = await _context.DifficultyLevels.ToListAsync();
+                await cacheService.SetData(typeof(DifficultyLevel).ToString(), levels, TimeSpan.FromSeconds(60));
+            }
+
             if (paginationParams.PageSize is not null)
             {
                 var paginationLevels = PaginationList<DifficultyLevel>.ToPaginationList(levels, paginationParams.numberPage, (int)paginationParams.PageSize);
@@ -55,18 +65,29 @@ namespace FoodWebApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<DifficultyLevel>> GetDifficultyLevel(int id)
         {
-          if (_context.DifficultyLevels == null)
-          {
-              return NotFound();
-          }
-            var difficultyLevel = await _context.DifficultyLevels.FindAsync(id);
+            if (_context.DifficultyLevels == null)
+            {
+                return NotFound();
+            }
+            var levels = await cacheService.GetData<IEnumerable<DifficultyLevel>>(typeof(DifficultyLevel).ToString());
+            DifficultyLevel difficultyLevel;
+            if (levels is not null)
+            {
+                difficultyLevel = levels.FirstOrDefault(c => c.Id == id);
+                if (difficultyLevel is not null)
+                {
+                    return Ok(difficultyLevel);
+                }
+            }
+
+            difficultyLevel = await _context.DifficultyLevels.FindAsync(id);
 
             if (difficultyLevel == null)
             {
                 return NotFound();
             }
 
-            return difficultyLevel;
+            return Ok(difficultyLevel);
         }
     }
 }

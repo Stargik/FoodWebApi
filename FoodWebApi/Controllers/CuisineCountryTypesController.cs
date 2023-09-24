@@ -9,6 +9,7 @@ using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Entities;
 using FoodWebApi.Models;
 using Newtonsoft.Json;
+using FoodWebApi.Interfaces;
 
 namespace FoodWebApi.Controllers
 {
@@ -17,10 +18,12 @@ namespace FoodWebApi.Controllers
     public class CuisineCountryTypesController : ControllerBase
     {
         private readonly FoodDbContext _context;
+        private readonly ICacheService cacheService;
 
-        public CuisineCountryTypesController(FoodDbContext context)
+        public CuisineCountryTypesController(FoodDbContext context, ICacheService cacheService)
         {
             _context = context;
+            this.cacheService = cacheService;
         }
 
         // GET: api/CuisineCountryTypes
@@ -31,7 +34,12 @@ namespace FoodWebApi.Controllers
             {
                 return NotFound();
             }
-           var cuisineCountryTypes = await _context.CuisineCountryTypes.ToListAsync();
+            var cuisineCountryTypes = await cacheService.GetData<IEnumerable<CuisineCountryType>>(typeof(CuisineCountryType).ToString());
+            if (cuisineCountryTypes is null)
+            {
+                cuisineCountryTypes = await _context.CuisineCountryTypes.ToListAsync();
+                await cacheService.SetData(typeof(CuisineCountryType).ToString(), cuisineCountryTypes, TimeSpan.FromSeconds(60));
+            }
 
             if (paginationParams.PageSize is not null)
             {
@@ -56,18 +64,28 @@ namespace FoodWebApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<CuisineCountryType>> GetCuisineCountryType(int id)
         {
-          if (_context.CuisineCountryTypes == null)
-          {
-              return NotFound();
-          }
-            var cuisineCountryType = await _context.CuisineCountryTypes.FindAsync(id);
+            if (_context.CuisineCountryTypes == null)
+            {
+                return NotFound();
+            }
+            var cuisineCountryTypes = await cacheService.GetData<IEnumerable<CuisineCountryType>>(typeof(CuisineCountryType).ToString());
+            CuisineCountryType cuisineCountryType;
+            if (cuisineCountryTypes is not null)
+            {
+                cuisineCountryType = cuisineCountryTypes.FirstOrDefault(c => c.Id == id);
+                if (cuisineCountryType is not null)
+                {
+                    return Ok(cuisineCountryType);
+                }
+            }
+            cuisineCountryType = await _context.CuisineCountryTypes.FindAsync(id);
 
             if (cuisineCountryType == null)
             {
                 return NotFound();
             }
 
-            return cuisineCountryType;
+            return Ok(cuisineCountryType);
         }
 
         // PUT: api/CuisineCountryTypes/5
@@ -85,6 +103,7 @@ namespace FoodWebApi.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                await cacheService.RemoveData(typeof(CuisineCountryType).ToString());
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -106,12 +125,13 @@ namespace FoodWebApi.Controllers
         [HttpPost]
         public async Task<ActionResult<CuisineCountryType>> PostCuisineCountryType(CuisineCountryType cuisineCountryType)
         {
-          if (_context.CuisineCountryTypes == null)
-          {
-              return Problem("Entity set 'FoodDbContext.CuisineCountryTypes'  is null.");
-          }
+            if (_context.CuisineCountryTypes == null)
+            {
+                return Problem("Entity set 'FoodDbContext.CuisineCountryTypes'  is null.");
+            }
             _context.CuisineCountryTypes.Add(cuisineCountryType);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(CuisineCountryType).ToString());
 
             return CreatedAtAction("GetCuisineCountryType", new { id = cuisineCountryType.Id }, cuisineCountryType);
         }
@@ -132,6 +152,7 @@ namespace FoodWebApi.Controllers
 
             _context.CuisineCountryTypes.Remove(cuisineCountryType);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(CuisineCountryType).ToString());
 
             return NoContent();
         }

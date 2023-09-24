@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 using FoodMVCWebApp.Models;
 using FoodWebApi.Models;
 using Newtonsoft.Json;
+using FoodWebApi.Interfaces;
 
 namespace FoodWebApi.Controllers
 {
@@ -23,24 +24,33 @@ namespace FoodWebApi.Controllers
         private readonly FoodDbContext _context;
         private readonly IImageService imageService;
         private readonly StaticFilesSettings imgSettings;
+        private readonly ICacheService cacheService;
 
-        public DishesController(FoodDbContext context, IImageService imageService, IOptions<StaticFilesSettings> imgSettings)
+        public DishesController(FoodDbContext context, IImageService imageService, IOptions<StaticFilesSettings> imgSettings, ICacheService cacheService)
         {
             _context = context;
             this.imageService = imageService;
             this.imgSettings = imgSettings.Value;
+            this.cacheService = cacheService;
         }
 
         // GET: api/Dishes
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Dish>>> GetDishes([FromQuery] PaginationParams paginationParams)
         {
-          if (_context.Dishes == null)
-          {
-              return NotFound();
-          }
+            if (_context.Dishes == null)
+            {
+                return NotFound();
+            }
+            var originalDishes = await cacheService.GetData<IEnumerable<Dish>>(typeof(Dish).ToString());
+            if (originalDishes is null)
+            {
+                originalDishes = await _context.Dishes.ToListAsync();
+                await cacheService.SetData(typeof(Dish).ToString(), originalDishes, TimeSpan.FromSeconds(60));
+            }
+
             var storagePath = await imageService.GetStoragePath();
-            var dishes = await _context.Dishes.Select(dish => new Dish
+            var dishes = originalDishes.Select(dish => new Dish
             {
                 Id = dish.Id,
                 Title = dish.Title,
@@ -52,7 +62,7 @@ namespace FoodWebApi.Controllers
                 CuisineCountryType = dish.CuisineCountryType,
                 CuisineCountryTypeId = dish.CuisineCountryTypeId,
                 Image = storagePath + "/" + dish.Image
-            }).ToListAsync();
+            });
 
             if (paginationParams.PageSize is not null)
             {
@@ -77,11 +87,22 @@ namespace FoodWebApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Dish>> GetDish(int id)
         {
-          if (_context.Dishes == null)
-          {
-              return NotFound();
-          }
-            var dish = await _context.Dishes.FindAsync(id);
+            if (_context.Dishes == null)
+            {
+                return NotFound();
+            }
+            var originalDishes = await cacheService.GetData<IEnumerable<Dish>>(typeof(Dish).ToString());
+            Dish dish;
+            if (originalDishes is not null)
+            {
+                dish = originalDishes.FirstOrDefault(c => c.Id == id);
+                if (dish is not null)
+                {
+                    dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
+                    return Ok(dish);
+                }
+            }
+            dish = await _context.Dishes.FindAsync(id);
             dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
 
             if (dish == null)
@@ -89,7 +110,7 @@ namespace FoodWebApi.Controllers
                 return NotFound();
             }
 
-            return dish;
+            return Ok(dish);
         }
 
         // PUT: api/Dishes/5
@@ -124,6 +145,7 @@ namespace FoodWebApi.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                await cacheService.RemoveData(typeof(Dish).ToString());
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -145,10 +167,10 @@ namespace FoodWebApi.Controllers
         [HttpPost]
         public async Task<ActionResult<Dish>> PostDish([FromForm] DishDTO dishDTO)
         {
-          if (_context.Dishes == null)
-          {
-              return Problem("Entity set 'FoodDbContext.Dishes'  is null.");
-          }
+            if (_context.Dishes == null)
+            {
+                return Problem("Entity set 'FoodDbContext.Dishes'  is null.");
+            }
             var dish = new Dish
             {
                 Title = dishDTO.Title,
@@ -161,6 +183,7 @@ namespace FoodWebApi.Controllers
             await imageService.Upload(dishDTO.Image);
             _context.Dishes.Add(dish);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(Dish).ToString());
             dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
             return CreatedAtAction("GetDish", new { id = dish.Id }, dish);
         }
@@ -181,6 +204,7 @@ namespace FoodWebApi.Controllers
 
             _context.Dishes.Remove(dish);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(Dish).ToString());
 
             return NoContent();
         }

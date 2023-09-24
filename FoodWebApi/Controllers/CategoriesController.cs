@@ -10,6 +10,7 @@ using FoodMVCWebApp.Entities;
 using FoodWebApi.Models;
 using Newtonsoft.Json;
 using System.Drawing.Printing;
+using FoodWebApi.Interfaces;
 
 namespace FoodWebApi.Controllers
 {
@@ -18,12 +19,12 @@ namespace FoodWebApi.Controllers
     public class CategoriesController : ControllerBase
     {
         private readonly FoodDbContext _context;
-        private readonly IWebHostEnvironment appEnvironment;
+        private readonly ICacheService cacheService;
 
-        public CategoriesController(FoodDbContext context, IWebHostEnvironment appEnvironment)
+        public CategoriesController(FoodDbContext context, ICacheService cacheService)
         {
             _context = context;
-            this.appEnvironment = appEnvironment;
+            this.cacheService = cacheService;
         }
 
         // GET: api/Categories
@@ -34,7 +35,13 @@ namespace FoodWebApi.Controllers
             {
                 return NotFound();
             }
-            var categories = await _context.Categories.ToListAsync();
+            var categories = await cacheService.GetData<IEnumerable<Category>>(typeof(Category).ToString());
+            if (categories is null)
+            {
+                categories = await _context.Categories.ToListAsync();
+                await cacheService.SetData(typeof(Category).ToString(), categories, TimeSpan.FromSeconds(60));
+            }
+
 
             if (paginationParams.PageSize is not null)
             {
@@ -48,22 +55,32 @@ namespace FoodWebApi.Controllers
                     paginationCategories.HasNext,
                     paginationCategories.HasPrevious,
                     nextLink = $"{Url.PageLink()}?numberPage={paginationParams.numberPage + 1}&PageSize={paginationParams.PageSize}"
-            };
+                };
                 Response.Headers.Add("X-Pagination", JsonConvert.SerializeObject(metadata));
                 return Ok(paginationCategories);
             }
-            return Ok(categories);   
+            return Ok(categories);
         }
 
         // GET: api/Categories/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Category>> GetCategory(int id)
         {
-          if (_context.Categories == null)
-          {
-              return NotFound();
-          }
-            var category = await _context.Categories.FindAsync(id);
+            if (_context.Categories == null)
+            {
+                return NotFound();
+            }
+            var categories = await cacheService.GetData<IEnumerable<Category>>(typeof(Category).ToString());
+            Category category;
+            if (categories is not null)
+            {
+                category = categories.FirstOrDefault(c => c.Id == id);
+                if (category is not null)
+                {
+                    return Ok(category);
+                }
+            }
+            category = await _context.Categories.FindAsync(id);
             if (category == null)
             {
                 return NotFound();
@@ -86,6 +103,7 @@ namespace FoodWebApi.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                await cacheService.RemoveData(typeof(Category).ToString());
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -107,12 +125,13 @@ namespace FoodWebApi.Controllers
         [HttpPost]
         public async Task<ActionResult<Category>> PostCategory(Category category)
         {
-          if (_context.Categories == null)
-          {
-              return Problem("Entity set 'FoodDbContext.Categories'  is null.");
-          }
+            if (_context.Categories == null)
+            {
+                return Problem("Entity set 'FoodDbContext.Categories'  is null.");
+            }
             _context.Categories.Add(category);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(Category).ToString());
 
             return CreatedAtAction("GetCategory", new { id = category.Id }, category);
         }
@@ -133,6 +152,7 @@ namespace FoodWebApi.Controllers
 
             _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
+            await cacheService.RemoveData(typeof(Category).ToString());
 
             return NoContent();
         }

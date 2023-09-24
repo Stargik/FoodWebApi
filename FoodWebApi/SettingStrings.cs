@@ -5,6 +5,7 @@ namespace FoodMVCWebApp
 	{
         public const string FoodDbConnection = "FoodDbConnection";
         public const string StaticFilesSection = "StaticFilesSection";
+        public const string RedisConnection = "RedisConnection";
     }
 }
 

@@ -3,7 +3,10 @@ using FoodMVCWebApp;
 using FoodMVCWebApp.Data;
 using FoodMVCWebApp.Interfaces;
 using FoodMVCWebApp.Services;
+using FoodWebApi.Interfaces;
+using FoodWebApi.Services;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 namespace FoodWebApi;
 
@@ -26,6 +29,13 @@ public class Program
 
         builder.Services.Configure<StaticFilesSettings>(builder.Configuration.GetSection(SettingStrings.StaticFilesSection));
         builder.Services.AddTransient<IImageService, FilesystemImageService>();
+        
+        builder.Services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = builder.Configuration.GetConnectionString(SettingStrings.RedisConnection);
+            options.InstanceName = builder.Configuration["Redis:InstanceName"];
+        });
+        builder.Services.AddTransient<ICacheService, RedisCacheService>();
 
         var app = builder.Build();
 
