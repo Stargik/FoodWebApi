@@ -37,6 +37,8 @@ public class Program
         });
         builder.Services.AddTransient<ICacheService, RedisCacheService>();
 
+        builder.Services.AddDishElasticsearch(builder.Configuration);
+
         var app = builder.Build();
 
         // Configure the HTTP request pipeline.

@@ -14,6 +14,7 @@ using FoodMVCWebApp.Models;
 using FoodWebApi.Models;
 using Newtonsoft.Json;
 using FoodWebApi.Interfaces;
+using Nest;
 
 namespace FoodWebApi.Controllers
 {
@@ -25,13 +26,15 @@ namespace FoodWebApi.Controllers
         private readonly IImageService imageService;
         private readonly StaticFilesSettings imgSettings;
         private readonly ICacheService cacheService;
+        private readonly IElasticClient elasticClient;
 
-        public DishesController(FoodDbContext context, IImageService imageService, IOptions<StaticFilesSettings> imgSettings, ICacheService cacheService)
+        public DishesController(FoodDbContext context, IImageService imageService, IOptions<StaticFilesSettings> imgSettings, ICacheService cacheService, IElasticClient elasticClient)
         {
             _context = context;
             this.imageService = imageService;
             this.imgSettings = imgSettings.Value;
             this.cacheService = cacheService;
+            this.elasticClient = elasticClient;
         }
 
         // GET: api/Dishes
@@ -146,6 +149,7 @@ namespace FoodWebApi.Controllers
             {
                 await _context.SaveChangesAsync();
                 await cacheService.RemoveData(typeof(Dish).ToString());
+                await elasticClient.UpdateAsync<Dish>(dish.Id, u => u.Doc(dish));
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -185,6 +189,7 @@ namespace FoodWebApi.Controllers
             await _context.SaveChangesAsync();
             await cacheService.RemoveData(typeof(Dish).ToString());
             dish.Image = (await imageService.GetStoragePath()) + "/" + dish.Image;
+            await elasticClient.IndexDocumentAsync(dish);
             return CreatedAtAction("GetDish", new { id = dish.Id }, dish);
         }
 
@@ -205,7 +210,7 @@ namespace FoodWebApi.Controllers
             _context.Dishes.Remove(dish);
             await _context.SaveChangesAsync();
             await cacheService.RemoveData(typeof(Dish).ToString());
-
+            await elasticClient.DeleteAsync<Dish>(dish);
             return NoContent();
         }
 
